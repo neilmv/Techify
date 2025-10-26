@@ -5,6 +5,7 @@ import express from "express";
 import path from "path";
 import db from "./config/db.js";
 
+import adminRoutes from "./routes/admin.js";
 import authRoutes from "./routes/auth.js";
 import bookingRoutes from "./routes/bookings.js";
 import paymentRoutes from "./routes/payments.js";
@@ -19,10 +20,21 @@ app.use(bodyParser.json());
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
+// Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/payments", paymentRoutes);
+
+// Health check
+app.get("/api/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 db.query("SELECT 1")
   .then(() => console.log("✅ Database connected successfully"))

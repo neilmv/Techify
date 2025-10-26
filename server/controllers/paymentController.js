@@ -1,6 +1,5 @@
 import db from "../config/db.js";
 
-// Record a payment
 export const createPayment = async (req, res) => {
   const { booking_id, amount, payment_method, payment_status, transaction_id } = req.body;
   try {
@@ -15,7 +14,6 @@ export const createPayment = async (req, res) => {
   }
 };
 
-// Get payment history (optional)
 export const getPayments = async (req, res) => {
   try {
     const [rows] = await db.query(`

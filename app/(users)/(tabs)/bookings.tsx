@@ -7,17 +7,18 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    useColorScheme,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  useColorScheme,
 } from "react-native";
 
 interface Booking {
   id: number;
+  user_id: number;
   customer_name: string;
   brand: string;
   service_type: string;
@@ -28,35 +29,67 @@ interface Booking {
   created_at: string;
 }
 
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
 export default function BookingsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [userBookings, setUserBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [userToken, setUserToken] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
   useEffect(() => {
     checkAuthStatus();
-    fetchBookings();
   }, []);
 
   const checkAuthStatus = async () => {
     try {
       const token = await AsyncStorage.getItem("userToken");
-      setUserToken(token);
+      const userData = await AsyncStorage.getItem("userData");
+
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
+
+      if (userData) {
+        const userObj = JSON.parse(userData);
+        setCurrentUser(userObj);
+      }
+
+      await fetchBookings();
     } catch (error) {
       console.error("Error checking auth status:", error);
+      router.replace("/login");
     }
   };
 
   const fetchBookings = async () => {
     try {
       const response = await API.get("/bookings");
-      setBookings(response.data);
-    } catch (error) {
+      // The backend now returns only the current user's bookings
+      setUserBookings(response.data);
+    } catch (error: any) {
       console.error("Error fetching bookings:", error);
-      Alert.alert("Error", "Failed to load bookings");
+
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        Alert.alert("Session Expired", "Please login again", [
+          {
+            text: "OK",
+            onPress: () => {
+              AsyncStorage.multiRemove(["userToken", "userData"]);
+              router.replace("/login");
+            },
+          },
+        ]);
+      } else {
+        Alert.alert("Error", "Failed to load bookings");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -214,7 +247,7 @@ export default function BookingsScreen() {
       </ThemedView>
 
       <ThemedView style={styles.content}>
-        {bookings.length === 0 ? (
+        {userBookings.length === 0 ? (
           <ThemedView style={styles.emptyContainer}>
             <Ionicons name="calendar-outline" size={64} color="#9ca3af" />
             <ThemedText type="subtitle" style={styles.emptyTitle}>
@@ -226,7 +259,7 @@ export default function BookingsScreen() {
             </ThemedText>
             <TouchableOpacity
               style={styles.bookNowButton}
-              onPress={() => router.push("/(tabs)")}
+              onPress={() => router.push("/")} // Fixed path
             >
               <ThemedText style={styles.bookNowButtonText}>
                 Book a Service
@@ -238,13 +271,13 @@ export default function BookingsScreen() {
             <ThemedView style={styles.statsContainer}>
               <ThemedView style={styles.statCard}>
                 <ThemedText type="defaultSemiBold" style={styles.statNumber}>
-                  {bookings.length}
+                  {userBookings.length}
                 </ThemedText>
                 <ThemedText style={styles.statLabel}>Total Bookings</ThemedText>
               </ThemedView>
               <ThemedView style={styles.statCard}>
                 <ThemedText type="defaultSemiBold" style={styles.statNumber}>
-                  {bookings.filter((b) => b.status === "Completed").length}
+                  {userBookings.filter((b) => b.status === "Completed").length}
                 </ThemedText>
                 <ThemedText style={styles.statLabel}>Completed</ThemedText>
               </ThemedView>
@@ -255,7 +288,7 @@ export default function BookingsScreen() {
             </ThemedText>
 
             <ThemedView style={styles.bookingsList}>
-              {bookings.map((booking) => (
+              {userBookings.map((booking) => (
                 <BookingCard key={booking.id} booking={booking} />
               ))}
             </ThemedView>
@@ -265,7 +298,6 @@ export default function BookingsScreen() {
     </ScrollView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -457,7 +489,7 @@ const styles = StyleSheet.create({
     color: "#4A90E2",
     fontWeight: "500",
   },
-    headerContainer: {
+  headerContainer: {
     width: "100%",
     alignItems: "center",
     justifyContent: "center",

@@ -44,9 +44,11 @@ export const registerUser = async (req, res) => {
     return res.status(400).json({ message: "All fields required" });
 
   try {
-    // Check if email already exists
-    const [existingUsers] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
-    
+    const [existingUsers] = await db.query(
+      "SELECT id FROM users WHERE email = ?",
+      [email]
+    );
+
     if (existingUsers.length > 0) {
       return res.status(409).json({ message: "Email already exists" });
     }
@@ -65,6 +67,40 @@ export const registerUser = async (req, res) => {
   }
 };
 
+// ADMIN REGISTER
+export const registerAdmin = async (req, res) => {
+  const { name, email, password, secretKey } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "All fields required" });
+  }
+
+  // Secret key check for admin registration
+  if (secretKey !== process.env.ADMIN_SECRET_KEY) {
+    return res.status(403).json({ message: "Invalid admin secret key" });
+  }
+
+  try {
+    const [existingUsers] = await db.query("SELECT id FROM users WHERE email = ?", [email]);
+    
+    if (existingUsers.length > 0) {
+      return res.status(409).json({ message: "Email already exists" });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const [result] = await db.query(
+      "INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)",
+      [name, email, hashedPassword, 1] // role = 1 for admin
+    );
+
+    return res.status(201).json({ message: "Admin registered successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Database error", error: err });
+  }
+};
+
 // LOGIN
 export const loginUser = async (req, res) => {
   const { email, password } = req.body;
@@ -73,7 +109,6 @@ export const loginUser = async (req, res) => {
     return res.status(400).json({ message: "All fields required" });
 
   try {
-    // Use async query
     const [results] = await db.query("SELECT * FROM users WHERE email = ?", [
       email,
     ]);
@@ -87,9 +122,15 @@ export const loginUser = async (req, res) => {
     if (!isMatch)
       return res.status(401).json({ message: "Invalid email or password" });
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    // Include role in the token
+    const token = jwt.sign(
+      { 
+        id: user.id,
+        role: user.role || 0 // Default to 0 if role doesn't exist
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: "7d" }
+    );
 
     return res.status(200).json({
       message: "Login successful",
@@ -101,6 +142,7 @@ export const loginUser = async (req, res) => {
         phone: user.phone,
         address: user.address,
         profile_picture: user.profile_picture,
+        role: user.role || 0, // Include role in response
         created_at: user.created_at,
       },
     });
@@ -109,6 +151,8 @@ export const loginUser = async (req, res) => {
     return res.status(500).json({ message: "Database error", error: err });
   }
 };
+
+
 
 // UPDATE PROFILE
 export const updateProfile = async (req, res) => {
@@ -122,7 +166,7 @@ export const updateProfile = async (req, res) => {
     );
 
     const [users] = await db.query(
-      "SELECT id, name, email, phone, address, profile_picture, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, address, profile_picture, role, created_at FROM users WHERE id = ?",
       [userId]
     );
 
@@ -145,7 +189,6 @@ export const updateProfilePicture = [
   upload.single("profile_picture"),
   async (req, res) => {
     console.log("Profile picture upload request received");
-    console.log("Headers:", req.headers);
     console.log("User ID from middleware:", req.userId);
     console.log("File:", req.file);
 
@@ -163,15 +206,13 @@ export const updateProfilePicture = [
       const profilePicturePath = "/uploads/profiles/" + req.file.filename;
       console.log("Profile picture path:", profilePicturePath);
 
-      // Update user profile picture
       const [result] = await db.query(
         "UPDATE users SET profile_picture = ? WHERE id = ?",
         [profilePicturePath, userId]
       );
 
-      // Get updated user data
       const [users] = await db.query(
-        "SELECT id, name, email, phone, address, profile_picture, created_at FROM users WHERE id = ?",
+        "SELECT id, name, email, phone, address, profile_picture, role, created_at FROM users WHERE id = ?",
         [userId]
       );
 
@@ -197,7 +238,7 @@ export const getProfile = async (req, res) => {
 
   try {
     const [users] = await db.query(
-      "SELECT id, name, email, phone, address, profile_picture, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, address, profile_picture, role, created_at FROM users WHERE id = ?",
       [userId]
     );
 

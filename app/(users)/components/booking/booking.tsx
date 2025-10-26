@@ -111,7 +111,6 @@ export default function BookingScreen() {
         issue_description: issueDescription,
         date: selectedDate,
         time_slot: selectedTime,
-        user_id: currentUser.id
       };
 
       await API.post('/bookings', bookingData);

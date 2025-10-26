@@ -1,5 +1,5 @@
 import { API, API_URL, authAPI } from "@/api/api";
-import EditProfileModal from "@/components/EditProfileModal"; // Add this import
+import EditProfileModal from "@/components/EditProfileModal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +26,12 @@ interface Stats {
   pendingBookings: number;
 }
 
+interface Booking {
+  id: number;
+  user_id: number;
+  status: string;
+}
+
 export default function ProfileScreen() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
@@ -37,37 +43,73 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [userToken, setUserToken] = useState<string | null>(null);
 
   useEffect(() => {
-    loadUserData();
-    loadStats();
+    checkAuthAndLoadData();
   }, []);
 
-  const loadUserData = async () => {
+  const checkAuthAndLoadData = async () => {
     try {
+      // First check if user is authenticated
+      const token = await AsyncStorage.getItem("userToken");
       const userData = await AsyncStorage.getItem("userData");
+      
+      setUserToken(token);
+      
+      if (!token) {
+        router.replace("/(auth)/login");
+        return;
+      }
+      
       if (userData) {
         const userObj = JSON.parse(userData);
         setUser(userObj);
+      } else {
+        try {
+          const profileResponse = await authAPI.getProfile();
+          if (profileResponse.data) {
+            setUser(profileResponse.data);
+            await AsyncStorage.setItem("userData", JSON.stringify(profileResponse.data));
+          }
+        } catch (profileError) {
+          console.error("Error fetching profile:", profileError);
+        }
       }
+      
+      await loadStats();
     } catch (error) {
-      console.error(error);
+      console.error("Auth check failed:", error);
+      router.replace("/(auth)/login");
     }
   };
 
   const loadStats = async () => {
     try {
+      if (!userToken) {
+        console.log("No token available");
+        return;
+      }
+
       const response = await API.get("/bookings");
-      const bookings = response.data;
+      const userBookings: Booking[] = response.data;
+      
       setStats({
-        totalBookings: bookings.length,
-        completedBookings: bookings.filter((b: any) => b.status === "Completed")
-          .length,
-        pendingBookings: bookings.filter((b: any) => b.status !== "Completed")
-          .length,
+        totalBookings: userBookings.length,
+        completedBookings: userBookings.filter((b) => b.status === "Completed").length,
+        pendingBookings: userBookings.filter((b) => 
+          b.status === "Pending" || b.status === "Confirmed" || b.status === "In Progress"
+        ).length,
       });
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      console.error("Error fetching stats:", error);
+      
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        Alert.alert("Session Expired", "Please login again", [
+          { text: "OK", onPress: () => router.replace("/(auth)/login") }
+        ]);
+        await AsyncStorage.multiRemove(["userToken", "userData"]);
+      }
     } finally {
       setLoading(false);
     }
@@ -89,8 +131,12 @@ export default function ProfileScreen() {
 
   const pickImage = async () => {
     try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!userToken) {
+        Alert.alert("Authentication Required", "Please login again");
+        return;
+      }
+
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
         Alert.alert("Permission Required", "Camera roll permission needed.");
         return;
@@ -131,12 +177,18 @@ export default function ProfileScreen() {
     }
   };
 
+
   const handleSaveProfile = async (userData: {
     name: string;
     phone: string;
     address: string;
   }) => {
     try {
+      if (!userToken) {
+        Alert.alert("Authentication Required", "Please login again");
+        return;
+      }
+
       setSaving(true);
       const response = await authAPI.updateProfile(userData);
       if (response.data.user) {
@@ -144,6 +196,7 @@ export default function ProfileScreen() {
         setUser(updatedUser);
         await AsyncStorage.setItem("userData", JSON.stringify(updatedUser));
         setEditModalVisible(false);
+        await loadStats();
       }
     } catch (error: any) {
       Alert.alert(
@@ -249,7 +302,11 @@ export default function ProfileScreen() {
               label: "Completed",
               value: stats.completedBookings,
             },
-            { icon: "time", label: "Pending", value: stats.pendingBookings },
+            { 
+              icon: "time", 
+              label: "Pending", 
+              value: stats.pendingBookings 
+            },
           ].map((s, i) => (
             <ThemedView key={i} style={styles.statCard}>
               <Ionicons name={s.icon as any} size={24} color="#4A90E2" />
@@ -267,14 +324,14 @@ export default function ProfileScreen() {
           <ThemedView style={styles.actionsGrid}>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push("/(tabs)")}
+              onPress={() => router.push("/(users)/(tabs)")}
             >
               <Ionicons name="add-circle" size={28} color="#4A90E2" />
               <ThemedText style={styles.actionText}>New Booking</ThemedText>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.actionCard}
-              onPress={() => router.push("/(tabs)/bookings")}
+              onPress={() => router.push("/(users)/(tabs)/bookings")}
             >
               <Ionicons name="list" size={28} color="#4A90E2" />
               <ThemedText style={styles.actionText}>My Bookings</ThemedText>

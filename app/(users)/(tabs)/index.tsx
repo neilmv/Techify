@@ -14,6 +14,7 @@ import { ServiceCard } from "../components/home/ServiceCard";
 import { ServiceFilter } from "../components/home/ServiceFilter";
 import { Service, ServiceType } from "../components/home/types";
 
+
 export default function HomeScreen() {
   const router = useRouter();
   const [services, setServices] = useState<Service[]>([]);
